@@ -1,0 +1,267 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model KalshiSeries {
+  id            String   @id @default(cuid())
+  seriesTicker  String   @unique
+  title         String?
+  category      String?
+  tags          String[]
+  rawPayload    Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  events        KalshiEvent[]
+  markets       KalshiMarket[]
+}
+
+model KalshiEvent {
+  id           String   @id @default(cuid())
+  eventTicker  String   @unique
+  seriesTicker String
+  title        String?
+  rawPayload   Json
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  series       KalshiSeries @relation(fields: [seriesTicker], references: [seriesTicker])
+  markets      KalshiMarket[]
+}
+
+model KalshiMarket {
+  id                         String   @id @default(cuid())
+  marketTicker               String   @unique
+  eventTicker                String
+  seriesTicker               String
+  rawTitle                   String
+  rawSubtitle                String?
+  yesSubtitle                String?
+  noSubtitle                 String?
+  marketType                 String
+  direction                  String
+  cityName                   String?
+  stateCode                  String?
+  eventDateLocal             String?
+  eventHourLocal             String?
+  timezone                   String?
+  rangeLowerF                Float?
+  rangeUpperF                Float?
+  lowerInclusive             Boolean
+  upperInclusive             Boolean
+  stationId                  String?
+  stationName                String?
+  stationLatitude            Float?
+  stationLongitude           Float?
+  settlementSourceName       String?
+  settlementSourceUrl        String?
+  contractUrl                String?
+  contractTermsUrl           String?
+  closeTime                  DateTime
+  expirationTime             DateTime?
+  yesBid                     Float?
+  yesAsk                     Float?
+  noBid                      Float?
+  noAsk                      Float?
+  lastPrice                  Float?
+  volume                     Float?
+  volume24h                  Float?
+  openInterest               Float?
+  liquidityDollars           Float?
+  fractionalTradingEnabled   Boolean
+  rawRulesPrimary            String?
+  rawRulesSecondary          String?
+  parseStatus                String
+  parseWarnings              String[]
+  rawPayload                 Json
+  updatedAt                  DateTime @updatedAt
+  createdAt                  DateTime @default(now())
+  series                     KalshiSeries @relation(fields: [seriesTicker], references: [seriesTicker])
+  event                      KalshiEvent @relation(fields: [eventTicker], references: [eventTicker])
+  orderbooks                 KalshiOrderbookSnapshot[]
+  probabilities              MarketProbabilitySnapshot[]
+  edgeSnapshots              MarketEdgeSnapshot[]
+}
+
+model KalshiOrderbookSnapshot {
+  id             String   @id @default(cuid())
+  marketTicker   String
+  yesBids        Json
+  noBids         Json
+  yesAsks        Json?
+  noAsks         Json?
+  sourceTimestamp DateTime @default(now())
+  rawPayload     Json
+  market         KalshiMarket @relation(fields: [marketTicker], references: [marketTicker])
+}
+
+model WeatherStationMapping {
+  id                     String   @id @default(cuid())
+  seriesTicker           String
+  cityName               String
+  stateCode              String
+  stationId              String
+  stationName            String
+  icaoCode               String?
+  latitude               Float
+  longitude              Float
+  timezone               String
+  settlementSourceName   String
+  settlementSourceUrl    String
+  dailyObservationWindow String
+  dailyReportTimezone    String
+  sourceConfidence       String
+  verifiedAt             DateTime
+  notes                  String?
+  @@index([seriesTicker])
+  @@index([stationId])
+}
+
+model WeatherForecastRun {
+  id              String   @id @default(cuid())
+  modelName       String
+  modelVersion    String
+  runTimeUtc      DateTime
+  forecastHour    Int
+  validTimeUtc    DateTime
+  sourceUrl       String
+  stationId       String
+  latitude        Float
+  longitude       Float
+  temperatureC    Float
+  temperatureF    Float
+  cloudCover      Float?
+  windSpeed       Float?
+  dewPoint        Float?
+  createdAt       DateTime @default(now())
+  rawPayload      Json?
+}
+
+model WeatherObservation {
+  id              String   @id @default(cuid())
+  stationId       String
+  observedAt      DateTime
+  temperatureF    Float
+  dewPointF       Float?
+  windSpeed       Float?
+  cloudLayers     Json?
+  visibility      Float?
+  sourceUrl       String
+  rawPayload      Json?
+  createdAt       DateTime @default(now())
+}
+
+model MarketProbabilitySnapshot {
+  id                  String   @id @default(cuid())
+  marketTicker        String
+  yesProbability      Float
+  noProbability       Float
+  meanTemperatureF    Float
+  medianTemperatureF  Float
+  p10TemperatureF     Float
+  p25TemperatureF     Float
+  p75TemperatureF     Float
+  p90TemperatureF     Float
+  confidence          String
+  uncertaintyF        Float
+  modelInputs         Json
+  reasons             String[]
+  warnings            String[]
+  sourceLinks         Json
+  marketPriceSnapshot Json?
+  feeEstimate         Json?
+  generatedAt         DateTime @default(now())
+  market              KalshiMarket @relation(fields: [marketTicker], references: [marketTicker])
+}
+
+model MarketEdgeSnapshot {
+  id                          String   @id @default(cuid())
+  scanId                      String
+  marketTicker                String
+  side                        String
+  yesProbability              Float
+  noProbability               Float
+  modelProbability            Float
+  marketImpliedProbability    Float
+  executablePrice             Float
+  netEdge                     Float
+  eligible                    Boolean
+  confidence                  String
+  estimatedFee                Float
+  feeMode                     String
+  slippage                    Float
+  uncertaintyBuffer           Float
+  sourceGeneratedAt           DateTime
+  sourceLinks                 Json
+  sourceTimestamps            Json?
+  reasons                     String[]
+  warnings                    String[]
+  eligibilityStatus           String
+  ineligibilityReasons        String[]
+  candidatePayload            Json
+  createdAt                   DateTime @default(now())
+  market                      KalshiMarket @relation(fields: [marketTicker], references: [marketTicker])
+  scan                        DataRefreshLog @relation(fields: [scanId], references: [id])
+
+  @@index([scanId])
+  @@index([marketTicker])
+  @@index([eligible, netEdge])
+  @@index([sourceGeneratedAt])
+}
+
+model AllocationRun {
+  id                    String   @id @default(cuid())
+  totalBudget            Float
+  riskProfile            String
+  recommendedDeployment  Float
+  cashHeldBack           Float
+  totalEstimatedFees     Float
+  expectedProfit         Float
+  expectedRoi            Float
+  probabilityOfProfit    Float
+  maxPossibleProfit      Float
+  maxPossibleLoss        Float
+  p05ProfitLoss          Float
+  p95ProfitLoss          Float
+  cvar05                 Float
+  warnings               String[]
+  generatedAt            DateTime @default(now())
+  rawPayload             Json
+  positions              AllocationPosition[]
+}
+
+model AllocationPosition {
+  id                          String   @id @default(cuid())
+  allocationRunId             String
+  marketTicker                String
+  marketTitle                 String
+  side                        String
+  recommendedDollars          Float
+  contracts                   Float
+  averageExecutableFillPrice  Float
+  estimatedFee                Float
+  costIncludingFee            Float
+  profitIfCorrect             Float
+  lossIfIncorrect             Float
+  estimatedExpectedProfit     Float
+  modelProbability            Float
+  marketPrice                 Float
+  netEdge                     Float
+  confidence                  String
+  correlationGroup            String
+  allocationRun               AllocationRun @relation(fields: [allocationRunId], references: [id])
+}
+
+model DataRefreshLog {
+  id              String   @id @default(cuid())
+  source          String
+  status          String
+  startedAt       DateTime
+  completedAt     DateTime?
+  message         String?
+  rawPayload      Json?
+  edgeSnapshots   MarketEdgeSnapshot[]
+}

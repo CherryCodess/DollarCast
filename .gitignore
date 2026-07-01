@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.*
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Next.js
+.next/
+out/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Test and build output
+coverage/
+playwright-report/
+test-results/
+dist/
+build/
+
+# Docker and local data
+*.log
+tmp/
+.cache/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

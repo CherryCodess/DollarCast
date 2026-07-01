@@ -1,0 +1,159 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dollarcast
+      POSTGRES_USER: dollarcast
+      POSTGRES_PASSWORD: dollarcast
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dollarcast -d dollarcast"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  weather-service:
+    build:
+      context: .
+      dockerfile: apps/weather-service/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.example
+    environment:
+      DATABASE_URL: ${WEATHER_DATABASE_URL:-postgresql+psycopg://dollarcast:dollarcast@postgres:5432/dollarcast}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    ports:
+      - "8000:8000"
+    volumes:
+      - grib-cache:/tmp/dollarcast-grib
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  weather-worker:
+    build:
+      context: .
+      dockerfile: apps/weather-service/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.example
+    environment:
+      DATABASE_URL: ${WEATHER_DATABASE_URL:-postgresql+psycopg://dollarcast:dollarcast@postgres:5432/dollarcast}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      WEATHER_INGESTION_INTERVAL_SECONDS: 900
+    command: ["python", "-m", "app.worker"]
+    volumes:
+      - grib-cache:/tmp/dollarcast-grib
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker_health"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 180s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.example
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://dollarcast:dollarcast@postgres:5432/dollarcast?schema=public}
+      WEATHER_SERVICE_URL: http://weather-service:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      weather-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/api/health >/dev/null"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 60s
+
+  edge-scanner:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.example
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://dollarcast:dollarcast@postgres:5432/dollarcast?schema=public}
+      WEATHER_SERVICE_URL: http://weather-service:8000
+      EDGE_SCANNER_INTERVAL_SECONDS: 120
+    command: ["sh", "-c", "npx prisma migrate deploy && npm run db:seed && npm run scanner:start"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      weather-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "npm", "run", "scanner:health"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 180s
+
+  retention-worker:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.example
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://dollarcast:dollarcast@postgres:5432/dollarcast?schema=public}
+      GRIB_CACHE_DIR: /tmp/dollarcast-grib
+    command: ["sh", "-c", "npx prisma migrate deploy && npm run retention:start"]
+    volumes:
+      - grib-cache:/tmp/dollarcast-grib
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "npm", "run", "retention:health"]
+      interval: 300s
+      timeout: 20s
+      retries: 3
+      start_period: 180s
+
+volumes:
+  postgres-data:
+  grib-cache:

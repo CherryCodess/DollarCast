@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+**/dist
+test-results
+**/test-results
+playwright-report
+**/playwright-report
+.git
+.agents
+.codex
+.env
+*.log
+npm-debug.log*

@@ -1,0 +1,30 @@
+{
+  "name": "dollarcast",
+  "private": true,
+  "version": "0.1.0",
+  "description": "$cast weather-market intelligence for Kalshi Climate markets",
+  "workspaces": [
+    "apps/web",
+    "packages/shared",
+    "packages/ui"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w apps/web",
+    "dev:full": "docker compose up --build",
+    "build": "npm run build -w packages/shared && npm run build -w packages/ui && npm run build -w apps/web",
+    "lint": "npm run lint -w apps/web && npm run lint -w packages/shared && npm run lint -w packages/ui",
+    "typecheck": "npm run typecheck -w packages/shared && npm run typecheck -w packages/ui && npm run typecheck -w apps/web",
+    "test": "npm run test -w packages/shared && npm run test -w apps/web",
+    "test:e2e": "npm run test:e2e -w apps/web",
+    "db:migrate": "npm run db:migrate -w apps/web",
+    "db:seed": "npm run db:seed -w apps/web",
+    "retention:cleanup": "npm run retention:cleanup -w apps/web",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.45.3",
+    "prettier": "^3.3.3",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}
