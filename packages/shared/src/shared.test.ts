@@ -58,6 +58,52 @@ describe("market parsing", () => {
     expect(market.stationId).toBe("KNYC");
     expect(market.parseStatus).toBe("verified");
   });
+
+  it("classifies maximum-temperature below-threshold markets as daily highs", () => {
+    const market = normalizeKalshiMarket(
+      {
+        ticker: "KXHIGHTSATX-26JUL02-T92",
+        event_ticker: "KXHIGHTSATX-26JUL02",
+        series_ticker: "KXHIGHNY",
+        title: "Will the maximum temperature be <92° on Jul 2, 2026?",
+        yes_sub_title: "91° or below",
+        no_sub_title: "92° or above",
+        close_time: "2026-07-02T23:00:00Z",
+        rules_primary: "Settles using National Weather Service report for Central Park KNYC official station maximum temperature.",
+        yes_bid: 4,
+        no_bid: 96
+      },
+      [mapping]
+    );
+
+    expect(market.marketType).toBe("daily_temperature");
+    expect(market.direction).toBe("high");
+    expect(market.rangeUpperF).toBe(92);
+    expect(market.upperInclusive).toBe(false);
+  });
+
+  it("classifies minimum-temperature above-threshold markets as daily lows", () => {
+    const market = normalizeKalshiMarket(
+      {
+        ticker: "KXLOWNY-26JUL02-T75",
+        event_ticker: "KXLOWNY-26JUL02",
+        series_ticker: "KXHIGHNY",
+        title: "Will the minimum temperature be >75° on Jul 2, 2026?",
+        yes_sub_title: "76° or above",
+        no_sub_title: "75° or below",
+        close_time: "2026-07-02T23:00:00Z",
+        rules_primary: "Settles using National Weather Service report for Central Park KNYC official station minimum temperature.",
+        yes_bid: 40,
+        no_bid: 58
+      },
+      [mapping]
+    );
+
+    expect(market.marketType).toBe("daily_temperature");
+    expect(market.direction).toBe("low");
+    expect(market.rangeLowerF).toBe(75);
+    expect(market.lowerInclusive).toBe(false);
+  });
 });
 
 describe("pricing and fees", () => {

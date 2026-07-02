@@ -143,8 +143,9 @@ export function classifyMarket(raw: RawKalshiMarket): {
   const isTemp = /temp|temperature|high|low|hourly/.test(text);
   if (!isTemp) return { marketType: "unsupported", direction: "unknown" };
   if (/hourly|at \d{1,2}\s?(am|pm)|\b\d{1,2}:00\b/.test(text)) return { marketType: "hourly_temperature", direction: "hourly" };
+  if (/\bhigh(?:est)?\b|\bmax(?:imum)?\b/.test(text)) return { marketType: "daily_temperature", direction: "high" };
   if (/\blow(?:est)?\b|\bmin(?:imum)?\b/.test(text)) return { marketType: "daily_temperature", direction: "low" };
-  if (/\bhigh(?:est)?\b|\bmax(?:imum)?\b|temperature/.test(text)) return { marketType: "daily_temperature", direction: "high" };
+  if (/temperature/.test(text)) return { marketType: "daily_temperature", direction: "high" };
   return { marketType: "unsupported", direction: "unknown" };
 }
 
