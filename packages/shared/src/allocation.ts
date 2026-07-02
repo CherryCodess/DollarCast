@@ -58,6 +58,13 @@ function eventGroupKey(candidate: CandidateOpportunity): string {
   ].join(":");
 }
 
+function suggestedAutosellTarget(candidate: CandidateOpportunity): number {
+  const entryPrice = candidate.fill.averagePrice;
+  const conservativeFairPrice = Math.max(entryPrice, candidate.edge.modelProbability - candidate.edge.uncertaintyBuffer);
+  const midpointTarget = entryPrice + Math.max(0, conservativeFairPrice - entryPrice) * 0.5;
+  return Math.min(0.99, Math.max(entryPrice, midpointTarget));
+}
+
 const profiles = {
   conservative: { singleCap: 0.25, cityDayCap: 0.45, minEdge: 0.07 },
   balanced: { singleCap: 0.35, cityDayCap: 0.6, minEdge: 0.05 },
@@ -88,8 +95,7 @@ export function buildCorrelationGroups(candidates: CandidateOpportunity[]): Corr
 export function recommendAllocation(input: AllocationInput, candidates: CandidateOpportunity[]): AllocationRecommendation {
   const profile = profiles[input.riskProfile];
   const warnings: string[] = [];
-  const targetMaxEntryPrice = input.targetMaxEntryPrice != null ? Math.min(0.99, Math.max(0.01, input.targetMaxEntryPrice)) : null;
-  const baseEligible = candidates
+  const eligible = candidates
     .filter(
       (c) =>
         c.edge.eligible &&
@@ -97,18 +103,13 @@ export function recommendAllocation(input: AllocationInput, candidates: Candidat
         c.probability.confidence !== "low" &&
         c.market.parseStatus === "verified" &&
         c.fill.remainingContracts === 0
-    );
-  const eligible = baseEligible
-    .filter((c) => targetMaxEntryPrice == null || c.fill.averagePrice <= targetMaxEntryPrice)
+    )
     .sort((a, b) => {
       const riskPenaltyA = a.probability.confidence === "high" ? 0 : 0.01;
       const riskPenaltyB = b.probability.confidence === "high" ? 0 : 0.01;
       return b.edge.netEdge - riskPenaltyB - (a.edge.netEdge - riskPenaltyA);
     });
   if (!eligible.length) warnings.push("No opportunities passed the edge, confidence, liquidity, fee, and risk filters.");
-  if (targetMaxEntryPrice != null && baseEligible.length && !eligible.length) {
-    warnings.push(`No opportunities passed the target max entry price of ${Math.round(targetMaxEntryPrice * 100)}c.`);
-  }
 
   const maxDeployment = input.budget;
   const uniqueEligibleMarkets = new Set(eligible.map((candidate) => candidate.market.marketTicker)).size;
@@ -180,6 +181,7 @@ export function recommendAllocation(input: AllocationInput, candidates: Candidat
       estimatedExpectedProfit: candidate.edge.grossExpectedValuePerContract * contracts,
       modelProbability: candidate.edge.modelProbability,
       marketPrice: candidate.edge.executablePrice,
+      targetPrice: suggestedAutosellTarget(candidate),
       netEdge: candidate.edge.netEdge,
       confidence: candidate.probability.confidence,
       correlationGroup: group

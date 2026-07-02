@@ -7,17 +7,11 @@ const requestSchema = z.object({
   budget: z.number().positive().max(100000),
   riskProfile: z.enum(["conservative", "balanced", "aggressive"]).default("balanced"),
   maxTotalLoss: z.number().positive().optional(),
-  maxAmountPerMarket: z.number().positive().optional(),
-  targetMaxPriceCents: z.number().min(1).max(99).optional()
+  maxAmountPerMarket: z.number().positive().optional()
 });
 
 export async function POST(request: Request) {
-  const body = requestSchema.parse(await request.json());
-  const { targetMaxPriceCents, ...allocationBody } = body;
-  const allocationInput = {
-    ...allocationBody,
-    targetMaxEntryPrice: targetMaxPriceCents == null ? undefined : targetMaxPriceCents / 100
-  };
+  const allocationInput = requestSchema.parse(await request.json());
   const candidateData = await getLatestEdgeSnapshot();
   if (!candidateData) {
     const allocation = recommendAllocation(allocationInput, []);

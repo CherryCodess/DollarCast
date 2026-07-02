@@ -21,7 +21,6 @@ const pct = (value: number) => {
 export function AllocationClient() {
   const [budget, setBudget] = useState(100);
   const [riskProfile, setRiskProfile] = useState<RiskProfile>("balanced");
-  const [targetMaxPriceCents, setTargetMaxPriceCents] = useState("");
   const [allocation, setAllocation] = useState<AllocationRecommendation | null>(null);
   const [mode, setMode] = useState<"live" | "demo" | "unavailable">("unavailable");
   const [loading, setLoading] = useState(false);
@@ -33,8 +32,7 @@ export function AllocationClient() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         budget,
-        riskProfile,
-        ...(targetMaxPriceCents ? { targetMaxPriceCents: Number(targetMaxPriceCents) } : {})
+        riskProfile
       })
     });
     const data = await response.json();
@@ -52,7 +50,7 @@ export function AllocationClient() {
           <div>
             <h1 className="text-2xl font-semibold">Allocation</h1>
             <p className="mt-1 text-sm text-muted">Enter the exact amount to invest. If verified edge, liquidity, and risk constraints cannot support that amount, no exact allocation recommendation is shown.</p>
-            <p className="mt-1 text-xs text-muted">Optional target price filters out positions whose executable average fill is above your max entry price.</p>
+            <p className="mt-1 text-xs text-muted">Suggested autosell targets are model-derived limit prices to consider setting manually on Kalshi. $cast does not place, change, or cancel orders.</p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <label className="text-sm text-muted">
@@ -69,21 +67,6 @@ export function AllocationClient() {
                 <option value="balanced">Balanced</option>
                 <option value="aggressive">Aggressive</option>
               </select>
-            </label>
-            <label className="text-sm text-muted">
-              Target max price
-              <div className="mt-1 flex h-10 w-32 items-center rounded-md border border-border bg-panel2 px-3 text-white">
-                <input
-                  className="w-full bg-transparent outline-none"
-                  min={1}
-                  max={99}
-                  placeholder="Any"
-                  type="number"
-                  value={targetMaxPriceCents}
-                  onChange={(e) => setTargetMaxPriceCents(e.target.value)}
-                />
-                <span className="text-muted">c</span>
-              </div>
             </label>
             <Button onClick={run} disabled={loading}>{loading ? "Calculating" : "Calculate"}</Button>
           </div>
@@ -112,7 +95,7 @@ export function AllocationClient() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1040px] text-sm">
                 <thead className="bg-panel2 text-left text-xs uppercase text-muted">
-                  <tr><th className="px-4 py-3">Market</th><th>Side</th><th>Model probability</th><th>Dollars</th><th>Contracts</th><th>Fill</th><th>Fee</th><th>Profit if correct</th><th>Loss if incorrect</th><th>Net edge</th><th>Correlation group</th></tr>
+                  <tr><th className="px-4 py-3">Market</th><th>Side</th><th>Model probability</th><th>Dollars</th><th>Contracts</th><th>Fill</th><th>Autosell target</th><th>Fee</th><th>Profit if correct</th><th>Loss if incorrect</th><th>Net edge</th><th>Correlation group</th></tr>
                 </thead>
                 <tbody>
                   {allocation.positions.map((position) => {
@@ -146,6 +129,7 @@ export function AllocationClient() {
                         <td>${position.recommendedDollars.toFixed(2)}</td>
                         <td>{position.contracts.toFixed(2)}</td>
                         <td>{Math.round(position.averageExecutableFillPrice * 100)}c</td>
+                        <td>{Math.round(position.targetPrice * 100)}c</td>
                         <td>${position.estimatedFee.toFixed(2)}</td>
                         <td className="text-positive">${position.profitIfCorrect.toFixed(2)}</td>
                         <td className="text-negative">${position.lossIfIncorrect.toFixed(2)}</td>

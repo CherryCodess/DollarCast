@@ -285,7 +285,7 @@ describe("allocation", () => {
     expect(allocation.positions[0].lossIfIncorrect).toBeCloseTo(0.5);
   });
 
-  it("filters allocation candidates by target max entry price", () => {
+  it("returns a suggested autosell target for recommended positions", () => {
     const market = normalizeKalshiMarket(
       {
         ticker: "KXHIGHNY-26JUN25-B75",
@@ -338,9 +338,11 @@ describe("allocation", () => {
       fee: { totalFeeDollars: 0, feePerContractDollars: 0, feeMode: "taker", feeSource: "test", isEstimated: false, warnings: [] }
     };
 
-    const allocation = recommendAllocation({ budget: 0.5, riskProfile: "balanced", targetMaxEntryPrice: 0.49 }, [candidate]);
-    expect(allocation.positions).toHaveLength(0);
-    expect(allocation.warnings.join(" ")).toContain("target max entry price");
+    const allocation = recommendAllocation({ budget: 0.5, riskProfile: "balanced" }, [candidate]);
+    expect(allocation.positions).toHaveLength(1);
+    expect(allocation.positions[0].targetPrice).toBeGreaterThanOrEqual(allocation.positions[0].averageExecutableFillPrice);
+    expect(allocation.positions[0].targetPrice).toBeLessThanOrEqual(0.99);
+    expect(allocation.positions[0].targetPrice).toBeGreaterThan(allocation.positions[0].averageExecutableFillPrice);
   });
 
   it("does not allocate multiple yes positions in mutually exclusive ranges for one event", () => {

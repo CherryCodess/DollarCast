@@ -179,6 +179,7 @@ export type RecommendedPosition = {
   estimatedExpectedProfit: number;
   modelProbability: number;
   marketPrice: number;
+  targetPrice: number;
   netEdge: number;
   confidence: Confidence;
   correlationGroup: string;
@@ -211,7 +212,6 @@ export type AllocationInput = {
   riskProfile: RiskProfile;
   maxTotalLoss?: number;
   maxAmountPerMarket?: number;
-  targetMaxEntryPrice?: number;
 };
 
 export type CandidateOpportunity = {
