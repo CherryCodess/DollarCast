@@ -25,6 +25,7 @@ playwright-report/
 test-results/
 dist/
 build/
+*.tsbuildinfo
 
 # Docker and local data
 *.log
