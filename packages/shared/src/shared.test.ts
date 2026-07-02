@@ -280,6 +280,67 @@ describe("allocation", () => {
     expect(allocation.positions.length).toBe(1);
     expect(allocation.recommendedDeployment).toBeCloseTo(0.5, 2);
     expect(allocation.positions[0].recommendedDollars).toBeCloseTo(0.5, 2);
+    expect(allocation.positions[0].contracts).toBeCloseTo(1);
+    expect(allocation.positions[0].profitIfCorrect).toBeCloseTo(0.5);
+    expect(allocation.positions[0].lossIfIncorrect).toBeCloseTo(0.5);
+  });
+
+  it("filters allocation candidates by target max entry price", () => {
+    const market = normalizeKalshiMarket(
+      {
+        ticker: "KXHIGHNY-26JUN25-B75",
+        event_ticker: "KXHIGHNY-26JUN25",
+        series_ticker: "KXHIGHNY",
+        title: "Will the high temperature in New York, NY be above 75F?",
+        yes_sub_title: "Above 75F",
+        no_sub_title: "75F or below",
+        close_time: "2026-06-25T20:00:00Z",
+        rules_primary: "Settles using National Weather Service report for Central Park KNYC official station high temperature.",
+        yes_bid: 55,
+        no_bid: 42
+      },
+      [mapping]
+    );
+    const candidate: CandidateOpportunity = {
+      market,
+      probability: {
+        marketTicker: market.marketTicker,
+        yesProbability: 0.9,
+        noProbability: 0.1,
+        meanTemperatureF: 78,
+        medianTemperatureF: 78,
+        p10TemperatureF: 75,
+        p25TemperatureF: 76,
+        p75TemperatureF: 80,
+        p90TemperatureF: 82,
+        confidence: "medium",
+        uncertaintyF: 2,
+        modelInputs: { nbmWeight: 0.45, hrrrWeight: 0.35, nwsWeight: 0.2, observationsWeight: 0 },
+        reasons: [],
+        warnings: [],
+        sourceLinks: [],
+        simulation: { temperaturesF: [76, 78, 80, 82] }
+      },
+      edge: {
+        side: "yes",
+        modelProbability: 0.9,
+        impliedProbability: 0.5,
+        executablePrice: 0.5,
+        feeProbabilityEquivalent: 0,
+        slippageProbabilityEquivalent: 0,
+        uncertaintyBuffer: 0.03,
+        netEdge: 0.37,
+        grossExpectedValuePerContract: 0.4,
+        eligible: true,
+        reasons: []
+      },
+      fill: { side: "yes", requestedContracts: 10, filledContracts: 10, averagePrice: 0.5, totalCost: 5, remainingContracts: 0, levelsUsed: [{ price: 0.5, quantity: 10 }], slippageVsBestAsk: 0 },
+      fee: { totalFeeDollars: 0, feePerContractDollars: 0, feeMode: "taker", feeSource: "test", isEstimated: false, warnings: [] }
+    };
+
+    const allocation = recommendAllocation({ budget: 0.5, riskProfile: "balanced", targetMaxEntryPrice: 0.49 }, [candidate]);
+    expect(allocation.positions).toHaveLength(0);
+    expect(allocation.warnings.join(" ")).toContain("target max entry price");
   });
 
   it("does not allocate multiple yes positions in mutually exclusive ranges for one event", () => {

@@ -211,6 +211,7 @@ export type AllocationInput = {
   riskProfile: RiskProfile;
   maxTotalLoss?: number;
   maxAmountPerMarket?: number;
+  targetMaxEntryPrice?: number;
 };
 
 export type CandidateOpportunity = {

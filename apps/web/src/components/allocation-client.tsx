@@ -21,6 +21,7 @@ const pct = (value: number) => {
 export function AllocationClient() {
   const [budget, setBudget] = useState(100);
   const [riskProfile, setRiskProfile] = useState<RiskProfile>("balanced");
+  const [targetMaxPriceCents, setTargetMaxPriceCents] = useState("");
   const [allocation, setAllocation] = useState<AllocationRecommendation | null>(null);
   const [mode, setMode] = useState<"live" | "demo" | "unavailable">("unavailable");
   const [loading, setLoading] = useState(false);
@@ -30,7 +31,11 @@ export function AllocationClient() {
     const response = await fetch("/api/allocation", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ budget, riskProfile })
+      body: JSON.stringify({
+        budget,
+        riskProfile,
+        ...(targetMaxPriceCents ? { targetMaxPriceCents: Number(targetMaxPriceCents) } : {})
+      })
     });
     const data = await response.json();
     setAllocation(data.allocation);
@@ -47,6 +52,7 @@ export function AllocationClient() {
           <div>
             <h1 className="text-2xl font-semibold">Allocation</h1>
             <p className="mt-1 text-sm text-muted">Enter the exact amount to invest. If verified edge, liquidity, and risk constraints cannot support that amount, no exact allocation recommendation is shown.</p>
+            <p className="mt-1 text-xs text-muted">Optional target price filters out positions whose executable average fill is above your max entry price.</p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <label className="text-sm text-muted">
@@ -63,6 +69,21 @@ export function AllocationClient() {
                 <option value="balanced">Balanced</option>
                 <option value="aggressive">Aggressive</option>
               </select>
+            </label>
+            <label className="text-sm text-muted">
+              Target max price
+              <div className="mt-1 flex h-10 w-32 items-center rounded-md border border-border bg-panel2 px-3 text-white">
+                <input
+                  className="w-full bg-transparent outline-none"
+                  min={1}
+                  max={99}
+                  placeholder="Any"
+                  type="number"
+                  value={targetMaxPriceCents}
+                  onChange={(e) => setTargetMaxPriceCents(e.target.value)}
+                />
+                <span className="text-muted">c</span>
+              </div>
             </label>
             <Button onClick={run} disabled={loading}>{loading ? "Calculating" : "Calculate"}</Button>
           </div>

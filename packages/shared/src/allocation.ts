@@ -88,7 +88,8 @@ export function buildCorrelationGroups(candidates: CandidateOpportunity[]): Corr
 export function recommendAllocation(input: AllocationInput, candidates: CandidateOpportunity[]): AllocationRecommendation {
   const profile = profiles[input.riskProfile];
   const warnings: string[] = [];
-  const eligible = candidates
+  const targetMaxEntryPrice = input.targetMaxEntryPrice != null ? Math.min(0.99, Math.max(0.01, input.targetMaxEntryPrice)) : null;
+  const baseEligible = candidates
     .filter(
       (c) =>
         c.edge.eligible &&
@@ -96,13 +97,18 @@ export function recommendAllocation(input: AllocationInput, candidates: Candidat
         c.probability.confidence !== "low" &&
         c.market.parseStatus === "verified" &&
         c.fill.remainingContracts === 0
-    )
+    );
+  const eligible = baseEligible
+    .filter((c) => targetMaxEntryPrice == null || c.fill.averagePrice <= targetMaxEntryPrice)
     .sort((a, b) => {
       const riskPenaltyA = a.probability.confidence === "high" ? 0 : 0.01;
       const riskPenaltyB = b.probability.confidence === "high" ? 0 : 0.01;
       return b.edge.netEdge - riskPenaltyB - (a.edge.netEdge - riskPenaltyA);
     });
   if (!eligible.length) warnings.push("No opportunities passed the edge, confidence, liquidity, fee, and risk filters.");
+  if (targetMaxEntryPrice != null && baseEligible.length && !eligible.length) {
+    warnings.push(`No opportunities passed the target max entry price of ${Math.round(targetMaxEntryPrice * 100)}c.`);
+  }
 
   const maxDeployment = input.budget;
   const uniqueEligibleMarkets = new Set(eligible.map((candidate) => candidate.market.marketTicker)).size;
