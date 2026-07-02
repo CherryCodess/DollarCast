@@ -411,6 +411,7 @@ describe("allocation", () => {
     expect(zeroOne.positions.length).toBeGreaterThan(0);
     expect(fractional.positions.length).toBeGreaterThan(0);
     expect(fractional.positions[0].marketTicker).toBe("KXHIGHAUS-26JUN25-B75");
+    expect(zeroOne.recommendedDeployment).toBeLessThan(fractional.recommendedDeployment);
   });
 
   it("does not allocate multiple yes positions in mutually exclusive ranges for one event", () => {

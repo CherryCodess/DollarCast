@@ -89,6 +89,108 @@ function candidateExpectedProfitDensity(candidate: CandidateOpportunity): number
   return costPerContract > 0 ? candidate.edge.grossExpectedValuePerContract / costPerContract : 0;
 }
 
+type SelectionState = {
+  usedByGroup: Map<string, number>;
+  selectedYesEventGroups: Set<string>;
+  selectedMarketSides: Map<string, Set<"yes" | "no">>;
+  selectedCandidates: Map<string, CandidateOpportunity>;
+};
+
+function candidateGroup(candidate: CandidateOpportunity): string {
+  return `${candidate.market.stationId}:${candidate.market.eventDateLocal}`;
+}
+
+function candidateBlocked(candidate: CandidateOpportunity, state: SelectionState): string | null {
+  const eventGroup = eventGroupKey(candidate);
+  const sidesForMarket = state.selectedMarketSides.get(candidate.market.marketTicker);
+  if (sidesForMarket?.size && !sidesForMarket.has(candidate.edge.side)) {
+    return `Skipped ${candidate.market.marketTicker}: opposite sides of the same market cannot both be selected.`;
+  }
+  if (candidate.edge.side === "yes" && state.selectedYesEventGroups.has(eventGroup)) {
+    return `Skipped ${candidate.market.marketTicker}: another YES position was already selected for the same mutually exclusive event.`;
+  }
+  const conflictingSameEvent = [...state.selectedCandidates.values()].find((selected) => eventGroupKey(selected) === eventGroup && !canWinTogether(selected, candidate));
+  if (conflictingSameEvent) {
+    return `Skipped ${candidate.market.marketTicker}: it is incompatible with selected same-event position ${conflictingSameEvent.market.marketTicker}.`;
+  }
+  return null;
+}
+
+function recordCandidate(candidate: CandidateOpportunity, dollars: number, state: SelectionState): void {
+  const group = candidateGroup(candidate);
+  state.usedByGroup.set(group, (state.usedByGroup.get(group) ?? 0) + dollars);
+  const sidesForMarket = state.selectedMarketSides.get(candidate.market.marketTicker) ?? new Set<"yes" | "no">();
+  sidesForMarket.add(candidate.edge.side);
+  state.selectedMarketSides.set(candidate.market.marketTicker, sidesForMarket);
+  if (candidate.edge.side === "yes") state.selectedYesEventGroups.add(eventGroupKey(candidate));
+  state.selectedCandidates.set(candidate.market.marketTicker, candidate);
+}
+
+function emptySelectionState(): SelectionState {
+  return {
+    usedByGroup: new Map(),
+    selectedYesEventGroups: new Set(),
+    selectedMarketSides: new Map(),
+    selectedCandidates: new Map()
+  };
+}
+
+type AllocationChoice = {
+  candidate: CandidateOpportunity;
+  dollars: number;
+};
+
+function selectionUnitDollars(budget: number): number {
+  if (budget <= 100) return 0.01;
+  if (budget <= 1000) return 0.25;
+  return 1;
+}
+
+function chooseZeroOneKnapsack(
+  eligible: CandidateOpportunity[],
+  budget: number,
+  maxSingle: number,
+  maxLoss: number,
+  cityDayLimit: number,
+  minimumPositionDollars: number
+): AllocationChoice[] {
+  const spendLimit = Math.min(budget, maxLoss);
+  const unit = selectionUnitDollars(spendLimit);
+  const maxUnits = Math.floor(spendLimit / unit);
+  type DpState = { value: number; choices: AllocationChoice[]; selected: SelectionState };
+  const dp: Array<DpState | undefined> = Array(maxUnits + 1);
+  dp[0] = { value: 0, choices: [], selected: emptySelectionState() };
+
+  for (const candidate of eligible.slice(0, 80)) {
+    const dollars = Math.min(maxSingle, candidateCapacity(candidate));
+    if (dollars < minimumPositionDollars) continue;
+    const weight = Math.max(1, Math.ceil(dollars / unit));
+    const value = dollars * candidateExpectedProfitDensity(candidate);
+    for (let spend = maxUnits - weight; spend >= 0; spend--) {
+      const existing = dp[spend];
+      if (!existing) continue;
+      if (candidateBlocked(candidate, existing.selected)) continue;
+      const group = candidateGroup(candidate);
+      if ((existing.selected.usedByGroup.get(group) ?? 0) + dollars > cityDayLimit) continue;
+      const nextSpend = spend + weight;
+      const nextValue = existing.value + value;
+      if (nextValue <= (dp[nextSpend]?.value ?? -Infinity)) continue;
+      const selected = emptySelectionState();
+      for (const choice of existing.choices) recordCandidate(choice.candidate, choice.dollars, selected);
+      recordCandidate(candidate, dollars, selected);
+      dp[nextSpend] = {
+        value: nextValue,
+        choices: [...existing.choices, { candidate, dollars }],
+        selected
+      };
+    }
+  }
+
+  return dp
+    .filter((state): state is DpState => Boolean(state))
+    .sort((a, b) => b.value - a.value || b.choices.reduce((sum, choice) => sum + choice.dollars, 0) - a.choices.reduce((sum, choice) => sum + choice.dollars, 0))[0]?.choices ?? [];
+}
+
 export function buildCorrelationGroups(candidates: CandidateOpportunity[]): CorrelationGroup[] {
   const grouped = new Map<string, CorrelationGroup>();
   for (const candidate of candidates) {
@@ -147,38 +249,15 @@ export function recommendAllocation(input: AllocationInput, candidates: Candidat
   const maxLoss = input.maxTotalLoss ?? input.budget;
   const cityDayLimit = profileCityDayCap;
   const minimumPositionDollars = Math.max(0.01, Math.min(0.25, maxSingle));
-  const usedByGroup = new Map<string, number>();
-  const selectedYesEventGroups = new Set<string>();
-  const selectedMarketSides = new Map<string, Set<"yes" | "no">>();
+  const selectionState = emptySelectionState();
   const positions: RecommendedPosition[] = [];
-  const selectedCandidates = new Map<string, CandidateOpportunity>();
   let deployed = 0;
   let totalFees = 0;
 
-  for (const candidate of eligible) {
-    if (deployed >= maxDeployment || deployed >= maxLoss) break;
-    const group = `${candidate.market.stationId}:${candidate.market.eventDateLocal}`;
-    const eventGroup = eventGroupKey(candidate);
-    const sidesForMarket = selectedMarketSides.get(candidate.market.marketTicker) ?? new Set<"yes" | "no">();
-    if (sidesForMarket.size && !sidesForMarket.has(candidate.edge.side)) {
-      warnings.push(`Skipped ${candidate.market.marketTicker}: opposite sides of the same market cannot both be selected.`);
-      continue;
-    }
-    if (candidate.edge.side === "yes" && selectedYesEventGroups.has(eventGroup)) {
-      warnings.push(`Skipped ${candidate.market.marketTicker}: another YES position was already selected for the same mutually exclusive event.`);
-      continue;
-    }
-    const conflictingSameEvent = [...selectedCandidates.values()].find((selected) => eventGroupKey(selected) === eventGroup && !canWinTogether(selected, candidate));
-    if (conflictingSameEvent) {
-      warnings.push(`Skipped ${candidate.market.marketTicker}: it is incompatible with selected same-event position ${conflictingSameEvent.market.marketTicker}.`);
-      continue;
-    }
-    const groupUsed = usedByGroup.get(group) ?? 0;
-    const remainingGroup = Math.max(0, cityDayLimit - groupUsed);
-    const remainingBudget = Math.max(0, maxDeployment - deployed, maxLoss - deployed);
-    const desired = allocationMode === "fractional_knapsack" ? remainingBudget : maxSingle;
-    const dollars = Math.min(desired, maxSingle, remainingGroup, remainingBudget, candidateCapacity(candidate));
-    if (dollars < minimumPositionDollars) continue;
+  const addPosition = (candidate: CandidateOpportunity, requestedDollars: number): boolean => {
+    const group = candidateGroup(candidate);
+    const dollars = Math.min(requestedDollars, candidateCapacity(candidate));
+    if (dollars < minimumPositionDollars) return false;
     const contracts = dollars / candidateCostPerContract(candidate);
     const fee = contracts * candidate.fee.feePerContractDollars;
     const cost = contracts * candidate.fill.averagePrice + fee;
@@ -216,18 +295,46 @@ export function recommendAllocation(input: AllocationInput, candidates: Candidat
     });
     deployed += cost;
     totalFees += fee;
-    usedByGroup.set(group, groupUsed + cost);
-    sidesForMarket.add(candidate.edge.side);
-    selectedMarketSides.set(candidate.market.marketTicker, sidesForMarket);
-    if (candidate.edge.side === "yes") selectedYesEventGroups.add(eventGroup);
-    selectedCandidates.set(candidate.market.marketTicker, candidate);
+    recordCandidate(candidate, cost, selectionState);
+    return true;
+  };
+
+  if (allocationMode === "zero_one_knapsack") {
+    for (const choice of chooseZeroOneKnapsack(eligible, input.budget, maxSingle, maxLoss, cityDayLimit, minimumPositionDollars)) {
+      if (deployed + choice.dollars > maxDeployment || deployed + choice.dollars > maxLoss) continue;
+      addPosition(choice.candidate, choice.dollars);
+    }
+  } else {
+    for (const candidate of eligible) {
+      if (deployed >= maxDeployment || deployed >= maxLoss) break;
+      const blockedReason = candidateBlocked(candidate, selectionState);
+      if (blockedReason) {
+        warnings.push(blockedReason);
+        continue;
+      }
+      const group = candidateGroup(candidate);
+      const groupUsed = selectionState.usedByGroup.get(group) ?? 0;
+      const remainingGroup = Math.max(0, cityDayLimit - groupUsed);
+      const remainingBudget = Math.max(0, maxDeployment - deployed, maxLoss - deployed);
+      const desired = allocationMode === "fractional_knapsack" ? remainingBudget : maxSingle;
+      const dollars = Math.min(desired, maxSingle, remainingGroup, remainingBudget, candidateCapacity(candidate));
+      if (dollars < minimumPositionDollars) continue;
+      addPosition(candidate, dollars);
+    }
   }
 
-  if (input.budget - deployed > 0.01 && positions.length) {
-    const selectedByEdge = [...positions].sort((a, b) => b.netEdge - a.netEdge);
+  if (allocationMode !== "zero_one_knapsack" && input.budget - deployed > 0.01 && positions.length) {
+    const selectedByEdge = [...positions].sort((a, b) => {
+      if (allocationMode === "fractional_knapsack") {
+        const candidateA = selectionState.selectedCandidates.get(a.marketTicker);
+        const candidateB = selectionState.selectedCandidates.get(b.marketTicker);
+        return candidateExpectedProfitDensity(candidateB!) - candidateExpectedProfitDensity(candidateA!);
+      }
+      return b.netEdge - a.netEdge;
+    });
     for (const position of selectedByEdge) {
       if (input.budget - deployed <= 0.01) break;
-      const candidate = selectedCandidates.get(position.marketTicker);
+      const candidate = selectionState.selectedCandidates.get(position.marketTicker);
       if (!candidate) continue;
       const verifiedCapacity = candidate.fill.totalCost + candidate.fee.totalFeeDollars;
       const remainingCandidateCapacity = Math.max(0, verifiedCapacity - position.costIncludingFee);
@@ -245,12 +352,12 @@ export function recommendAllocation(input: AllocationInput, candidates: Candidat
       position.estimatedExpectedProfit += candidate.edge.grossExpectedValuePerContract * addedContracts;
       deployed += addedCost;
       totalFees += addedFee;
-      usedByGroup.set(position.correlationGroup, (usedByGroup.get(position.correlationGroup) ?? 0) + addedCost);
+      selectionState.usedByGroup.set(position.correlationGroup, (selectionState.usedByGroup.get(position.correlationGroup) ?? 0) + addedCost);
     }
   }
 
   const deploymentShortfall = input.budget - deployed;
-  if (deploymentShortfall > 0.01) {
+  if (allocationMode !== "zero_one_knapsack" && deploymentShortfall > 0.01) {
     return {
       totalBudget: input.budget,
       recommendedDeployment: 0,
@@ -277,7 +384,7 @@ export function recommendAllocation(input: AllocationInput, candidates: Candidat
 
   const trials = Math.max(
     1000,
-    ...positions.map((p) => selectedCandidates.get(p.marketTicker)?.probability.simulation?.temperaturesF?.length ?? 0)
+    ...positions.map((p) => selectionState.selectedCandidates.get(p.marketTicker)?.probability.simulation?.temperaturesF?.length ?? 0)
   );
   const fallbackGroupOffsets = new Map<string, number>();
   for (const position of positions) {
@@ -285,7 +392,7 @@ export function recommendAllocation(input: AllocationInput, candidates: Candidat
   }
   const simulatedPl = Array.from({ length: trials }, (_, i) =>
     positions.reduce((sum, pos) => {
-      const candidate = selectedCandidates.get(pos.marketTicker);
+      const candidate = selectionState.selectedCandidates.get(pos.marketTicker);
       const temps = candidate?.probability.simulation?.temperaturesF;
       let contractResolvesYes: boolean;
       if (candidate && temps?.length) {
