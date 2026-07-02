@@ -92,7 +92,7 @@ describe("market parsing", () => {
         yes_sub_title: "76° or above",
         no_sub_title: "75° or below",
         close_time: "2026-07-02T23:00:00Z",
-        rules_primary: "Settles using National Weather Service report for Central Park KNYC official station minimum temperature.",
+        rules_primary: "The official and final value is the maximum/minimum temperature as reported by the corresponding NWS Climatological Report (Daily). This market settles using the minimum temperature.",
         yes_bid: 40,
         no_bid: 58
       },
