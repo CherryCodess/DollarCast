@@ -1,7 +1,7 @@
 "use client";
 
 import { kalshiMarketHref } from "@/lib/links";
-import type { AllocationRecommendation, RiskProfile } from "@dollarcast/shared";
+import type { AllocationMode, AllocationRecommendation, RiskProfile } from "@dollarcast/shared";
 import { Badge, Button, Card, Stat } from "@dollarcast/ui";
 import { ExternalLink } from "lucide-react";
 import { useState } from "react";
@@ -12,15 +12,23 @@ const riskLabels: Record<RiskProfile, string> = {
   aggressive: "Aggressive"
 };
 
+const modeLabels: Record<AllocationMode, string> = {
+  risk_adjusted: "Risk-adjusted",
+  zero_one_knapsack: "0/1 knapsack",
+  fractional_knapsack: "Fractional knapsack"
+};
+
 const pct = (value: number) => {
   if (value >= 0.999) return "99.9%";
   if (value <= 0.001) return "0.1%";
   return `${(value * 100).toFixed(1)}%`;
 };
+const price = (value: number) => `${Math.round(value * 100)}c`;
 
 export function AllocationClient() {
   const [budget, setBudget] = useState(100);
   const [riskProfile, setRiskProfile] = useState<RiskProfile>("balanced");
+  const [allocationMode, setAllocationMode] = useState<AllocationMode>("risk_adjusted");
   const [allocation, setAllocation] = useState<AllocationRecommendation | null>(null);
   const [mode, setMode] = useState<"live" | "demo" | "unavailable">("unavailable");
   const [loading, setLoading] = useState(false);
@@ -32,7 +40,8 @@ export function AllocationClient() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         budget,
-        riskProfile
+        riskProfile,
+        allocationMode
       })
     });
     const data = await response.json();
@@ -50,7 +59,7 @@ export function AllocationClient() {
           <div>
             <h1 className="text-2xl font-semibold">Allocation</h1>
             <p className="mt-1 text-sm text-muted">Enter the exact amount to invest. If verified edge, liquidity, and risk constraints cannot support that amount, no exact allocation recommendation is shown.</p>
-            <p className="mt-1 text-xs text-muted">Suggested autosell targets are model-derived limit prices to consider setting manually on Kalshi. $cast does not place, change, or cancel orders.</p>
+            <p className="mt-1 text-xs text-muted">Current event price is the executable fill price from the same edge snapshot used on Climate Markets. Suggested autosell targets are model-derived limit prices to consider setting manually on Kalshi. $cast does not place, change, or cancel orders.</p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <label className="text-sm text-muted">
@@ -66,6 +75,14 @@ export function AllocationClient() {
                 <option value="conservative">Conservative</option>
                 <option value="balanced">Balanced</option>
                 <option value="aggressive">Aggressive</option>
+              </select>
+            </label>
+            <label className="text-sm text-muted">
+              Allocation mode
+              <select className="mt-1 h-10 rounded-md border border-border bg-panel2 px-3 text-white" value={allocationMode} onChange={(e) => setAllocationMode(e.target.value as AllocationMode)}>
+                <option value="risk_adjusted">Risk-adjusted</option>
+                <option value="zero_one_knapsack">0/1 knapsack</option>
+                <option value="fractional_knapsack">Fractional knapsack</option>
               </select>
             </label>
             <Button onClick={run} disabled={loading}>{loading ? "Calculating" : "Calculate"}</Button>
@@ -91,11 +108,11 @@ export function AllocationClient() {
           </div>
           {allocation.warnings.length ? <Card className="border-warning/50 text-warning">{allocation.warnings.join(" ")}</Card> : null}
           <Card className="p-0">
-            <div className="border-b border-border p-4 font-semibold">{riskLabels[riskProfile]} allocation recommendation</div>
+            <div className="border-b border-border p-4 font-semibold">{riskLabels[riskProfile]} · {modeLabels[allocationMode]} allocation recommendation</div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1040px] text-sm">
+              <table className="w-full min-w-[1120px] text-sm">
                 <thead className="bg-panel2 text-left text-xs uppercase text-muted">
-                  <tr><th className="px-4 py-3">Market</th><th>Side</th><th>Model probability</th><th>Dollars</th><th>Contracts</th><th>Fill</th><th>Autosell target</th><th>Fee</th><th>Profit if correct</th><th>Loss if incorrect</th><th>Net edge</th><th>Correlation group</th></tr>
+                  <tr><th className="px-4 py-3">Market</th><th>Side</th><th>Model probability</th><th>Dollars</th><th>Contracts</th><th>Current event price</th><th>Autosell target</th><th>Fee</th><th>Profit if correct</th><th>Loss if incorrect</th><th>Net edge</th><th>Correlation group</th></tr>
                 </thead>
                 <tbody>
                   {allocation.positions.map((position) => {
@@ -128,8 +145,11 @@ export function AllocationClient() {
                         <td>{position.side.toUpperCase()} {pct(position.modelProbability)}</td>
                         <td>${position.recommendedDollars.toFixed(2)}</td>
                         <td>{position.contracts.toFixed(2)}</td>
-                        <td>{Math.round(position.averageExecutableFillPrice * 100)}c</td>
-                        <td>{Math.round(position.targetPrice * 100)}c</td>
+                        <td>
+                          <div>{price(position.currentEventPrice)}</div>
+                          <div className="text-xs text-muted">Avg fill {price(position.averageExecutableFillPrice)}</div>
+                        </td>
+                        <td>{price(position.targetPrice)}</td>
                         <td>${position.estimatedFee.toFixed(2)}</td>
                         <td className="text-positive">${position.profitIfCorrect.toFixed(2)}</td>
                         <td className="text-negative">${position.lossIfIncorrect.toFixed(2)}</td>

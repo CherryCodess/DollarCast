@@ -152,6 +152,7 @@ describe("allocation", () => {
     expect(allocation.recommendedDeployment).toBeCloseTo(5.9, 2);
     expect(allocation.cashHeldBack).toBeCloseTo(0, 2);
     expect(allocation.positions[0].recommendedDollars).toBeCloseTo(5.9, 2);
+    expect(allocation.positions[0].currentEventPrice).toBeGreaterThan(0);
   });
 
   it("uses portfolio simulations for probability and downside metrics", () => {
@@ -343,6 +344,73 @@ describe("allocation", () => {
     expect(allocation.positions[0].targetPrice).toBeGreaterThanOrEqual(allocation.positions[0].averageExecutableFillPrice);
     expect(allocation.positions[0].targetPrice).toBeLessThanOrEqual(0.99);
     expect(allocation.positions[0].targetPrice).toBeGreaterThan(allocation.positions[0].averageExecutableFillPrice);
+  });
+
+  it("supports edge-ranked knapsack allocation modes", () => {
+    const makeCandidate = (ticker: string, probability: number, executablePrice: number): CandidateOpportunity => {
+      const market = normalizeKalshiMarket(
+        {
+          ticker,
+          event_ticker: ticker.replace("-B75", ""),
+          series_ticker: "KXHIGHNY",
+          title: "Will the high temperature in New York, NY be above 75F?",
+          yes_sub_title: "Above 75F",
+          no_sub_title: "75F or below",
+          close_time: "2026-06-25T20:00:00Z",
+          rules_primary: "Settles using National Weather Service report for Central Park KNYC official station high temperature.",
+          yes_bid: Math.round((1 - executablePrice) * 100),
+          no_bid: Math.round(executablePrice * 100)
+        },
+        [mapping]
+      );
+      return {
+        market,
+        probability: {
+          marketTicker: market.marketTicker,
+          yesProbability: probability,
+          noProbability: 1 - probability,
+          meanTemperatureF: 78,
+          medianTemperatureF: 78,
+          p10TemperatureF: 75,
+          p25TemperatureF: 76,
+          p75TemperatureF: 80,
+          p90TemperatureF: 82,
+          confidence: "medium",
+          uncertaintyF: 2,
+          modelInputs: { nbmWeight: 0.45, hrrrWeight: 0.35, nwsWeight: 0.2, observationsWeight: 0 },
+          reasons: [],
+          warnings: [],
+          sourceLinks: [],
+          simulation: { temperaturesF: [76, 78, 80, 82] }
+        },
+        edge: {
+          side: "yes",
+          modelProbability: probability,
+          impliedProbability: executablePrice,
+          executablePrice,
+          feeProbabilityEquivalent: 0,
+          slippageProbabilityEquivalent: 0,
+          uncertaintyBuffer: 0.03,
+          netEdge: probability - executablePrice - 0.03,
+          grossExpectedValuePerContract: probability - executablePrice,
+          eligible: true,
+          reasons: []
+        },
+        fill: { side: "yes", requestedContracts: 100, filledContracts: 100, averagePrice: executablePrice, totalCost: executablePrice * 100, remainingContracts: 0, levelsUsed: [{ price: executablePrice, quantity: 100 }], slippageVsBestAsk: 0 },
+        fee: { totalFeeDollars: 0, feePerContractDollars: 0, feeMode: "taker", feeSource: "test", isEstimated: false, warnings: [] }
+      };
+    };
+
+    const candidates = [
+      makeCandidate("KXHIGHNY-26JUN25-B75", 0.8, 0.55),
+      makeCandidate("KXHIGHAUS-26JUN25-B75", 0.7, 0.3)
+    ];
+    const zeroOne = recommendAllocation({ budget: 20, riskProfile: "aggressive", allocationMode: "zero_one_knapsack" }, candidates);
+    const fractional = recommendAllocation({ budget: 20, riskProfile: "aggressive", allocationMode: "fractional_knapsack" }, candidates);
+
+    expect(zeroOne.positions.length).toBeGreaterThan(0);
+    expect(fractional.positions.length).toBeGreaterThan(0);
+    expect(fractional.positions[0].marketTicker).toBe("KXHIGHAUS-26JUN25-B75");
   });
 
   it("does not allocate multiple yes positions in mutually exclusive ranges for one event", () => {

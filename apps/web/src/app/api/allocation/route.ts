@@ -6,6 +6,7 @@ import { z } from "zod";
 const requestSchema = z.object({
   budget: z.number().positive().max(100000),
   riskProfile: z.enum(["conservative", "balanced", "aggressive"]).default("balanced"),
+  allocationMode: z.enum(["risk_adjusted", "zero_one_knapsack", "fractional_knapsack"]).default("risk_adjusted"),
   maxTotalLoss: z.number().positive().optional(),
   maxAmountPerMarket: z.number().positive().optional()
 });

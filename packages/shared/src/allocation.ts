@@ -65,11 +65,29 @@ function suggestedAutosellTarget(candidate: CandidateOpportunity): number {
   return Math.min(0.99, Math.max(entryPrice, midpointTarget));
 }
 
+function currentDisplayedEventPrice(candidate: CandidateOpportunity): number {
+  const sideAsk = candidate.edge.side === "yes" ? candidate.market.yesAsk : candidate.market.noAsk;
+  return sideAsk ?? candidate.edge.executablePrice;
+}
+
 const profiles = {
   conservative: { singleCap: 0.25, cityDayCap: 0.45, minEdge: 0.07 },
   balanced: { singleCap: 0.35, cityDayCap: 0.6, minEdge: 0.05 },
   aggressive: { singleCap: 0.55, cityDayCap: 0.8, minEdge: 0.03 }
 } as const;
+
+function candidateCapacity(candidate: CandidateOpportunity): number {
+  return Math.max(0, candidate.fill.totalCost + candidate.fee.totalFeeDollars);
+}
+
+function candidateCostPerContract(candidate: CandidateOpportunity): number {
+  return candidate.fill.averagePrice + candidate.fee.feePerContractDollars;
+}
+
+function candidateExpectedProfitDensity(candidate: CandidateOpportunity): number {
+  const costPerContract = candidateCostPerContract(candidate);
+  return costPerContract > 0 ? candidate.edge.grossExpectedValuePerContract / costPerContract : 0;
+}
 
 export function buildCorrelationGroups(candidates: CandidateOpportunity[]): CorrelationGroup[] {
   const grouped = new Map<string, CorrelationGroup>();
@@ -94,6 +112,7 @@ export function buildCorrelationGroups(candidates: CandidateOpportunity[]): Corr
 
 export function recommendAllocation(input: AllocationInput, candidates: CandidateOpportunity[]): AllocationRecommendation {
   const profile = profiles[input.riskProfile];
+  const allocationMode = input.allocationMode ?? "risk_adjusted";
   const warnings: string[] = [];
   const eligible = candidates
     .filter(
@@ -105,6 +124,14 @@ export function recommendAllocation(input: AllocationInput, candidates: Candidat
         c.fill.remainingContracts === 0
     )
     .sort((a, b) => {
+      if (allocationMode === "zero_one_knapsack") {
+        const valueA = a.edge.grossExpectedValuePerContract * Math.floor(candidateCapacity(a) / candidateCostPerContract(a));
+        const valueB = b.edge.grossExpectedValuePerContract * Math.floor(candidateCapacity(b) / candidateCostPerContract(b));
+        return valueB - valueA || b.edge.netEdge - a.edge.netEdge;
+      }
+      if (allocationMode === "fractional_knapsack") {
+        return candidateExpectedProfitDensity(b) - candidateExpectedProfitDensity(a) || b.edge.netEdge - a.edge.netEdge;
+      }
       const riskPenaltyA = a.probability.confidence === "high" ? 0 : 0.01;
       const riskPenaltyB = b.probability.confidence === "high" ? 0 : 0.01;
       return b.edge.netEdge - riskPenaltyB - (a.edge.netEdge - riskPenaltyA);
@@ -149,10 +176,10 @@ export function recommendAllocation(input: AllocationInput, candidates: Candidat
     const groupUsed = usedByGroup.get(group) ?? 0;
     const remainingGroup = Math.max(0, cityDayLimit - groupUsed);
     const remainingBudget = Math.max(0, maxDeployment - deployed, maxLoss - deployed);
-    const desired = maxSingle;
-    const dollars = Math.min(desired, maxSingle, remainingGroup, remainingBudget, candidate.fill.totalCost + candidate.fee.totalFeeDollars);
+    const desired = allocationMode === "fractional_knapsack" ? remainingBudget : maxSingle;
+    const dollars = Math.min(desired, maxSingle, remainingGroup, remainingBudget, candidateCapacity(candidate));
     if (dollars < minimumPositionDollars) continue;
-    const contracts = dollars / (candidate.fill.averagePrice + candidate.fee.feePerContractDollars);
+    const contracts = dollars / candidateCostPerContract(candidate);
     const fee = contracts * candidate.fee.feePerContractDollars;
     const cost = contracts * candidate.fill.averagePrice + fee;
     const profitIfCorrect = contracts * (1 - candidate.fill.averagePrice) - fee;
@@ -173,6 +200,7 @@ export function recommendAllocation(input: AllocationInput, candidates: Candidat
       side: candidate.edge.side,
       recommendedDollars: dollars,
       contracts,
+      currentEventPrice: currentDisplayedEventPrice(candidate),
       averageExecutableFillPrice: candidate.fill.averagePrice,
       estimatedFee: fee,
       costIncludingFee: cost,

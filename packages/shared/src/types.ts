@@ -171,6 +171,7 @@ export type RecommendedPosition = {
   side: PositionSide;
   recommendedDollars: number;
   contracts: number;
+  currentEventPrice: number;
   averageExecutableFillPrice: number;
   estimatedFee: number;
   costIncludingFee: number;
@@ -206,10 +207,12 @@ export type AllocationRecommendation = {
 };
 
 export type RiskProfile = "conservative" | "balanced" | "aggressive";
+export type AllocationMode = "risk_adjusted" | "zero_one_knapsack" | "fractional_knapsack";
 
 export type AllocationInput = {
   budget: number;
   riskProfile: RiskProfile;
+  allocationMode?: AllocationMode;
   maxTotalLoss?: number;
   maxAmountPerMarket?: number;
 };
